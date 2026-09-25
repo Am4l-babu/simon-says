@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 260" width="900" height="260" role="img" aria-label="Simon Says - an ESP8266 memory game">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d1117"/>
+      <stop offset="1" stop-color="#161b22"/>
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="6" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <rect width="900" height="260" rx="18" fill="url(#bg)"/>
+  <rect x="1" y="1" width="898" height="258" rx="17" fill="none" stroke="#30363d"/>
+
+  <!-- The four pads, lit in order: 1 red, 2 green, 3 blue, 4 yellow -->
+  <g transform="translate(20,0)" filter="url(#glow)">
+    <path d="M124 124 V30 A100 100 0 0 0 30 124 Z" fill="#ff3b3b" opacity="0.28">
+      <animate attributeName="opacity" values="0.28;1;0.28;0.28" keyTimes="0;0.08;0.25;1" dur="4s" repeatCount="indefinite"/>
+    </path>
+    <path d="M136 124 V30 A100 100 0 0 1 230 124 Z" fill="#2ee66b" opacity="0.28">
+      <animate attributeName="opacity" values="0.28;0.28;1;0.28;0.28" keyTimes="0;0.25;0.33;0.5;1" dur="4s" repeatCount="indefinite"/>
+    </path>
+    <path d="M136 136 H230 A100 100 0 0 1 136 230 Z" fill="#3b82ff" opacity="0.28">
+      <animate attributeName="opacity" values="0.28;0.28;1;0.28;0.28" keyTimes="0;0.5;0.58;0.75;1" dur="4s" repeatCount="indefinite"/>
+    </path>
+    <path d="M124 136 H30 A100 100 0 0 0 124 230 Z" fill="#ffb800" opacity="0.28">
+      <animate attributeName="opacity" values="0.28;0.28;1;0.28" keyTimes="0;0.75;0.83;1" dur="4s" repeatCount="indefinite"/>
+    </path>
+  </g>
+
+  <!-- Title -->
+  <text x="300" y="118" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="78" font-weight="800" fill="#f0f6fc" letter-spacing="2">SIMON</text>
+  <text x="300" y="192" font-family="'Segoe UI', Helvetica, Arial, sans-serif" font-size="78" font-weight="800" fill="#f0f6fc" letter-spacing="2">SAYS</text>
+
+  <!-- Colour bar under the title -->
+  <g>
+    <rect x="300" y="208" width="60" height="6" rx="3" fill="#ff3b3b"/>
+    <rect x="366" y="208" width="60" height="6" rx="3" fill="#2ee66b"/>
+    <rect x="432" y="208" width="60" height="6" rx="3" fill="#3b82ff"/>
+    <rect x="498" y="208" width="60" height="6" rx="3" fill="#ffb800"/>
+  </g>
+
+  <text x="300" y="240" font-family="Consolas, 'Courier New', monospace" font-size="16" fill="#8b949e">ESP8266  ·  PCF8574  ·  SSD1306 OLED  ·  WS2812B</text>
+
+  <!-- Blinking cursor, like the OLED's "PRESS BUTTON" -->
+  <rect x="700" y="176" width="22" height="16" fill="#f0f6fc">
+    <animate attributeName="opacity" values="1;1;0;0" keyTimes="0;0.5;0.5;1" dur="1s" repeatCount="indefinite"/>
+  </rect>
+</svg>

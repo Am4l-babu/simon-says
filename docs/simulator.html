@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Simon Says Simulator</title>
+<meta name="description" content="Play the Simon Says ESP8266 firmware in your browser: same timings, notes and OLED screens.">
+<style>
+  :root {
+    --bg: #0d1117; --card: #161b22; --line: #30363d; --fg: #f0f6fc; --mut: #8b949e;
+    --red: #ff3b3b; --green: #2ee66b; --blue: #3b82ff; --yellow: #ffb800;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f6f8fa; --card: #ffffff; --line: #d0d7de; --fg: #1f2328; --mut: #57606a; }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--bg); color: var(--fg);
+    font-family: "Segoe UI", system-ui, -apple-system, Helvetica, Arial, sans-serif;
+    display: flex; flex-direction: column; align-items: center; padding: 24px 16px 40px;
+  }
+  h1 { margin: 0; font-size: clamp(28px, 7vw, 40px); font-weight: 800; letter-spacing: .04em; }
+  h1 span:nth-child(1) { color: var(--red); } h1 span:nth-child(2) { color: var(--green); }
+  h1 span:nth-child(3) { color: var(--blue); } h1 span:nth-child(4) { color: var(--yellow); }
+  .sub { color: var(--mut); margin: 6px 0 20px; text-align: center; max-width: 42ch; line-height: 1.45; }
+
+  .device {
+    width: min(100%, 400px); background: var(--card); border: 1px solid var(--line);
+    border-radius: 24px; padding: 18px; box-shadow: 0 12px 40px rgba(0,0,0,.35);
+  }
+
+  /* ---- OLED ---- */
+  .oled-wrap { background: #000; border: 3px solid #21262d; border-radius: 10px; padding: 6px; position: relative; }
+  .oled-wrap::after { /* scanlines */
+    content: ""; position: absolute; inset: 6px; pointer-events: none; border-radius: 4px;
+    background: repeating-linear-gradient(to bottom, rgba(0,0,0,0) 0 3px, rgba(0,0,0,.18) 3px 4px);
+  }
+  canvas { display: block; width: 100%; aspect-ratio: 2 / 1; }
+  .timer { height: 4px; margin: 10px 2px 0; border-radius: 2px; background: var(--line); overflow: hidden; }
+  .timer i { display: block; height: 100%; width: 100%; background: var(--green); transform-origin: left; transform: scaleX(0); }
+
+  /* ---- ring + pads ---- */
+  .ring { position: relative; width: 100%; aspect-ratio: 1; margin-top: 14px; }
+  .dot {
+    position: absolute; width: 5.6%; aspect-ratio: 1; border-radius: 50%;
+    transform: translate(-50%, -50%); background: #262c36; transition: background .04s, box-shadow .04s;
+  }
+  .pads {
+    position: absolute; inset: 19.5%; display: grid; gap: 3.2%;
+    grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr;
+  }
+  .pad {
+    --c: var(--red); position: relative; border: 0; padding: 0; cursor: pointer;
+    background: transparent; -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  }
+  .pad::before {
+    content: ""; position: absolute; inset: 0; background: var(--c); opacity: .22;
+    border-radius: 8px; transition: opacity .05s, box-shadow .05s, transform .05s;
+  }
+  .pad:hover::before { opacity: .34; }
+  .pad:active::before { transform: scale(.97); }
+  .pad.lit::before { opacity: 1; box-shadow: 0 0 34px var(--c), inset 0 0 22px rgba(255,255,255,.35); }
+  .pad:focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; border-radius: 12px; }
+  .pad .num {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    font: 700 15px/1 Consolas, monospace; color: #fff; opacity: .75; pointer-events: none;
+  }
+  .pad .led { /* the PCF8574 game LED */
+    position: absolute; width: 11%; aspect-ratio: 1; border-radius: 50%; background: #3a1010; pointer-events: none;
+  }
+  .pad.lit .led { background: #fff; box-shadow: 0 0 10px 2px var(--c); }
+  .p0 { grid-area: 1 / 1; --c: var(--red);    border-radius: 100% 8px 8px 8px; } .p0::before { border-radius: 100% 8px 8px 8px; } .p0 .led { left: 12%; top: 12%; }
+  .p1 { grid-area: 1 / 2; --c: var(--green);  } .p1::before { border-radius: 8px 100% 8px 8px; } .p1 .led { right: 12%; top: 12%; }
+  .p2 { grid-area: 2 / 2; --c: var(--blue);   } .p2::before { border-radius: 8px 8px 100% 8px; } .p2 .led { right: 12%; bottom: 12%; }
+  .p3 { grid-area: 2 / 1; --c: var(--yellow); } .p3::before { border-radius: 8px 8px 8px 100%; } .p3 .led { left: 12%; bottom: 12%; }
+
+  /* ---- controls ---- */
+  .row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 16px; }
+  .btn {
+    background: transparent; color: var(--fg); border: 1px solid var(--line); border-radius: 999px;
+    padding: 7px 14px; font: 600 13px/1 inherit; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--mut); }
+  .btn[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
+  .hint { color: var(--mut); font-size: 13px; text-align: center; margin: 14px 0 0; line-height: 1.5; }
+  kbd { font: 600 12px Consolas, monospace; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; }
+
+  details { width: min(100%, 400px); margin-top: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+  summary { cursor: pointer; padding: 10px 14px; font-size: 13px; color: var(--mut); }
+  pre {
+    margin: 0; padding: 0 14px 12px; font: 12px/1.5 Consolas, monospace; color: var(--green);
+    max-height: 160px; overflow: auto; white-space: pre-wrap;
+  }
+  footer { margin-top: 22px; color: var(--mut); font-size: 12px; text-align: center; line-height: 1.6; }
+  footer a { color: inherit; }
+</style>
+</head>
+<body>
+  <h1><span>S</span><span>I</span><span>M</span><span>O</span><span>N</span> SAYS</h1>
+  <p class="sub">A browser copy of the ESP8266 firmware: same speed curve, same notes, same screens.</p>
+
+  <main class="device">
+    <div class="oled-wrap"><canvas id="oled" width="512" height="256" aria-label="OLED display"></canvas></div>
+    <div class="timer" aria-hidden="true"><i id="timerBar"></i></div>
+
+    <div class="ring" id="ring">
+      <div class="pads">
+        <button class="pad p0" data-i="0" aria-label="Button 1, red"><span class="led"></span><span class="num">1</span></button>
+        <button class="pad p1" data-i="1" aria-label="Button 2, green"><span class="led"></span><span class="num">2</span></button>
+        <button class="pad p2" data-i="2" aria-label="Button 3, blue"><span class="led"></span><span class="num">3</span></button>
+        <button class="pad p3" data-i="3" aria-label="Button 4, yellow"><span class="led"></span><span class="num">4</span></button>
+      </div>
+    </div>
+
+    <div class="row">
+      <button class="btn" id="mute" aria-pressed="false">🔊 Sound on</button>
+    </div>
+    <p class="hint">Press any pad to start · keys <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> <kbd>4</kbd> work too.<br>
+      The outer ring is the WS2812B strip, the small dots are the PCF8574 LEDs.</p>
+  </main>
+
+  <details>
+    <summary>Serial monitor (spoiler: prints the sequence, like the real board)</summary>
+    <pre id="serial">115200 baud
+</pre>
+  </details>
+
+  <footer>
+    Recreation of <code>src/main.cpp</code> · the real thing runs on an ESP8266<br>
+    <a href="https://github.com/Am4l-babu/simon-says">github.com/Am4l-babu/simon-says</a>
+  </footer>
+
+<script>
+"use strict";
+
+/* ------------------------------------------------------------------ *
+ *  Constants mirrored from the firmware
+ * ------------------------------------------------------------------ */
+const NUM_RGB_LEDS = 24;
+const MAX_SEQUENCE = 50;
+const COLORS = ["#ff3b3b", "#2ee66b", "#3b82ff", "#ffb800"];   // red green blue yellow
+const WHITE = "#ffffff";
+const NOTES = [262, 330, 392, 523];                            // C E G C
+
+const $ = (s) => document.querySelector(s);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/* ------------------------------------------------------------------ *
+ *  Buzzer  (square wave, like a passive buzzer)
+ * ------------------------------------------------------------------ */
+let actx = null;
+let muted = false;
+
+function audio() {
+  if (!actx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (AC) actx = new AC();
+  }
+  if (actx && actx.state === "suspended") actx.resume();
+  return actx;
+}
+
+function tone(freq, ms) {
+  const a = audio();
+  if (!a || muted) return;
+  const o = a.createOscillator();
+  const g = a.createGain();
+  const t = a.currentTime;
+  o.type = "square";
+  o.frequency.value = freq;
+  g.gain.setValueAtTime(0.04, t);
+  g.gain.setValueAtTime(0, t + ms / 1000);
+  o.connect(g).connect(a.destination);
+  o.start(t);
+  o.stop(t + ms / 1000 + 0.02);
+}
+
+async function beep(freq, ms) { tone(freq, ms); await sleep(ms); }
+const buttonSound = (b) => beep(NOTES[b], 120);
+
+/* ------------------------------------------------------------------ *
+ *  Hardware: WS2812B ring + PCF8574 LEDs
+ * ------------------------------------------------------------------ */
+const ring = $("#ring");
+const dots = [];
+for (let i = 0; i < NUM_RGB_LEDS; i++) {
+  const a = (i / NUM_RGB_LEDS) * Math.PI * 2 - Math.PI / 2;
+  const d = document.createElement("i");
+  d.className = "dot";
+  d.style.left = 50 + 46 * Math.cos(a) + "%";
+  d.style.top  = 50 + 46 * Math.sin(a) + "%";
+  ring.appendChild(d);
+  dots.push(d);
+}
+const pads = [...document.querySelectorAll(".pad")];
+
+function rgbAll(color) {
+  for (const d of dots) {
+    d.style.background = color;
+    d.style.boxShadow = `0 0 10px 2px ${color}`;
+  }
+}
+function rgbOff() {
+  for (const d of dots) { d.style.background = ""; d.style.boxShadow = ""; }
+}
+const rgbButton = (b) => rgbAll(COLORS[b]);
+const gameLED = (b, on) => pads[b].classList.toggle("lit", on);
+
+async function rgbSuccess() {
+  rgbAll(COLORS[1]); await sleep(150);
+  rgbOff();          await sleep(100);
+  rgbAll(COLORS[1]); await sleep(150);
+  rgbOff();
+}
+async function rgbError() {
+  for (let x = 0; x < 3; x++) {
+    rgbAll(COLORS[0]); await sleep(150);
+    rgbOff();          await sleep(150);
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ *  OLED 128x64 (drawn at 4x, on the firmware's 6x8 character grid)
+ * ------------------------------------------------------------------ */
+const cv = $("#oled");
+const g = cv.getContext("2d");
+const SCALE = 4;
+const INK = "#c9f1ff";
+
+const oled = {
+  clear() { g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = "#000"; g.fillRect(0, 0, cv.width, cv.height); g.setTransform(SCALE, 0, 0, SCALE, 0, 0); },
+  text(x, y, size, str) {
+    g.fillStyle = INK;
+    g.textBaseline = "top";
+    g.font = `bold ${size === 1 ? 9 : 18}px Consolas, "Courier New", monospace`;
+    [...String(str)].forEach((ch, i) => g.fillText(ch, x + i * 6 * size, y - (size === 1 ? 1 : 2)));
+  },
+  line(x0, y, x1) { g.fillStyle = INK; g.fillRect(x0, y, x1 - x0 + 1, 1); },
+
+  title()  { this.clear(); this.text(8, 5, 2, "SIMON"); this.text(8, 27, 2, "SAYS"); },
+  start()  { this.clear(); this.text(10, 2, 2, "SIMON"); this.text(10, 22, 2, "SAYS"); this.text(20, 50, 1, "PRESS BUTTON"); },
+  watch()  {
+    this.clear();
+    this.text(0, 0, 1, "SIMON SAYS"); this.text(80, 0, 1, "LVL " + S.level);
+    this.line(0, 12, 127);
+    this.text(5, 20, 2, "SCORE"); this.text(78, 20, 2, S.score);
+    this.text(20, 50, 1, "WATCH...");
+  },
+  turn()   {
+    this.clear();
+    this.text(0, 0, 1, "LEVEL: " + S.level); this.text(0, 15, 1, "SCORE: " + S.score);
+    this.text(15, 35, 2, "YOUR TURN");
+  },
+  over()   {
+    this.clear();
+    this.text(10, 0, 2, "GAME"); this.text(10, 20, 2, "OVER");
+    this.text(0, 45, 1, "Score: " + S.score); this.text(70, 45, 1, "Best: " + S.high);
+  },
+  levelUp() { this.clear(); this.text(20, 8, 2, "LEVEL"); this.text(50, 32, 2, S.level); },
+};
+
+/* ------------------------------------------------------------------ *
+ *  Buttons: a press is only "seen" while the game is waiting for one,
+ *  exactly like the firmware, which ignores buttons while it is busy.
+ * ------------------------------------------------------------------ */
+let waiter = null;
+const bar = $("#timerBar");
+
+function press(i) { if (waiter) { const w = waiter; waiter = null; w(i); } }
+
+function nextPress(timeoutMs) {
+  return new Promise((resolve) => {
+    let t = null;
+    if (timeoutMs) {
+      bar.style.transition = "none";
+      bar.style.transform = "scaleX(1)";
+      bar.getBoundingClientRect();                       // restart the animation
+      bar.style.transition = `transform ${timeoutMs}ms linear`;
+      bar.style.transform = "scaleX(0)";
+      t = setTimeout(() => { waiter = null; resolve(-1); }, timeoutMs);
+    }
+    waiter = (i) => { clearTimeout(t); resolve(i); };
+  });
+}
+
+function resetBar() { bar.style.transition = "none"; bar.style.transform = "scaleX(0)"; }
+
+pads.forEach((p) => p.addEventListener("pointerdown", (e) => { e.preventDefault(); audio(); press(+p.dataset.i); }));
+addEventListener("keydown", (e) => {
+  if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+  const i = "1234".indexOf(e.key);
+  if (i >= 0) { audio(); press(i); }
+});
+
+$("#mute").addEventListener("click", (e) => {
+  muted = !muted;
+  e.currentTarget.setAttribute("aria-pressed", String(muted));
+  e.currentTarget.textContent = muted ? "🔇 Sound off" : "🔊 Sound on";
+});
+
+const serial = $("#serial");
+function log(line) {
+  serial.textContent += line + "\n";
+  const lines = serial.textContent.split("\n");
+  if (lines.length > 60) serial.textContent = lines.slice(-60).join("\n");
+  serial.scrollTop = serial.scrollHeight;
+}
+
+/* ------------------------------------------------------------------ *
+ *  Game (a line-by-line port of the firmware's loop)
+ * ------------------------------------------------------------------ */
+const S = {
+  sequence: [], length: 1, score: 0, high: 0, level: 1,
+  showTime: 600, playerTimeout: 5000,
+};
+
+const randomButton = () => Math.floor(Math.random() * 4);
+
+async function waitForStart() {
+  oled.start(); rgbOff(); resetBar();
+  const b = await nextPress(0);
+  await buttonSound(b);
+  gameLED(b, true); rgbButton(b);
+  await sleep(250);
+  gameLED(b, false); rgbOff();
+}
+
+async function startGame() {
+  S.score = 0; S.level = 1; S.length = 1; S.showTime = 600; S.playerTimeout = 5000;
+  S.sequence = Array.from({ length: MAX_SEQUENCE }, randomButton);
+  oled.levelUp();
+  rgbAll(WHITE); await sleep(500);
+  rgbOff();      await sleep(500);
+}
+
+async function showSequence() {
+  oled.watch(); resetBar();
+  await sleep(700);
+  for (let i = 0; i < S.length; i++) {
+    const b = S.sequence[i];
+    gameLED(b, true); rgbButton(b);
+    await buttonSound(b);
+    await sleep(S.showTime);
+    gameLED(b, false); rgbOff();
+    await sleep(180);
+  }
+}
+
+async function getPlayerSequence() {
+  oled.turn();
+  let pos = 0;
+  while (pos < S.length) {
+    const b = await nextPress(S.playerTimeout);
+    if (b === -1) return false;                                // too slow
+    gameLED(b, true); rgbButton(b);
+    await buttonSound(b);
+    await sleep(120);
+    gameLED(b, false); rgbOff();
+    if (b !== S.sequence[pos]) return false;                   // wrong button
+    pos++;
+  }
+  resetBar();
+  return true;
+}
+
+async function correctRound() {
+  S.score += 10;
+  if (S.score > S.high) S.high = S.score;
+  await rgbSuccess();
+  await beep(700, 100);
+  await sleep(200);
+}
+
+async function gameOver() {
+  resetBar();
+  for (let b = 0; b < 4; b++) gameLED(b, false);
+  await rgbError();
+  await beep(150, 300); await sleep(100); await beep(100, 500);
+  oled.over();
+  await sleep(2500);
+  rgbOff();
+  await sleep(500);
+}
+
+async function playGame() {
+  await startGame();
+  for (;;) {
+    log(`Level: ${S.level}  Sequence: ${S.sequence.slice(0, S.length).join(" ")} `);
+    await showSequence();
+
+    if (!(await getPlayerSequence())) { await gameOver(); return; }
+    await correctRound();
+
+    S.level++;
+    if (S.showTime > 180) S.showTime -= 30;                    // faster
+    if (S.playerTimeout < 10000) S.playerTimeout += 150;       // more thinking time
+    if (S.length < MAX_SEQUENCE) S.length++;                   // one more step
+
+    oled.levelUp();
+    rgbAll(COLORS[1]);
+    await beep(800, 80); await sleep(100); await beep(1000, 80);
+    await sleep(400);
+    rgbOff();
+    await sleep(300);
+  }
+}
+
+(async function main() {
+  oled.title();
+  await sleep(1500);
+  for (;;) {
+    await waitForStart();
+    await playGame();
+  }
+})();
+</script>
+</body>
+</html>
